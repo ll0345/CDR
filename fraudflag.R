@@ -54,7 +54,7 @@ sona$Email=str_trim(sona$Email)
 qualtrics$Q_RecaptchaScore=as.numeric(qualtrics$Q_RecaptchaScore)
 qualtrics$Q_RelevantIDDuplicateScore=as.numeric(qualtrics$Q_RelevantIDDuplicateScore)
 qualtrics$Q_RelevantIDFraudScore=as.numeric(qualtrics$Q_RelevantIDFraudScore)
-qualtrics$Q_RelevantIDLastStartDate=table(ymd_hms(qualtrics$Q_RelevantIDLastStartDate))
+qualtrics$Q_RelevantIDLastStartDate=ymd_hms(qualtrics$Q_RelevantIDLastStartDate)
 
 #creating refer text
 # this concatenates all the refer text into 1 column called refer_text
@@ -76,6 +76,14 @@ qualtrics$reason="N/A"
 
 #creating email. If provided .edu email at any point as student, this will be copied. Else NA
 qualtrics$email_fin=NA
+#updating email fin for students with proper emails
+qualtrics$email_fin=ifelse(qualtrics$student!="Not student" & endsWith(qualtrics$email1,".edu"),
+                           qualtrics$email1,
+                           qualtrics$email_fin)
+#updating email fin for nonstudents
+qualtrics$email_fin=ifelse(qualtrics$student=="Not student",
+                           qualtrics$email1,
+                           qualtrics$email_fin)
 
 #reordering columns in qualtrics
 qualtrics=qualtrics[,c(1:17,28:31,19:21,34,27,18,33,32,35:38)]
@@ -232,15 +240,6 @@ get_new_flags=function(flagged_participants,df){
 # inputs: 
 #     df = subset of qualtrics data of only the relevant dates
 student_email=function(df){
- 
-  #updating email fin for students with proper emails
-  qualtrics$email_fin=ifelse(qualtrics$student!="Not student" & endsWith(qualtrics$email1,".edu"),
-                             qualtrics$email1,
-                             qualtrics$email_fin)
-  #updating email fin for nonstudents
-  qualtrics$email_fin=ifelse(qualtrics$student=="Not student",
-                             qualtrics$email1,
-                             qualtrics$email_fin)
   
   update_email=df %>%
     filter(student=="Other student") %>%
@@ -265,7 +264,10 @@ student_email=function(df){
   
   #people who gave edu email, but selected strange choice (not want to sign and/or school doesn't have .edu)
   weird=df%>%filter(endsWith(edu_email2, ".edu") & (edu_email_reason!="" | not_sign_as_student!=""))
-  weird$reason="weird Other: gave .edu email2, but not sign as student and/or claimed non-edu email"
+  
+  if(nrow(weird>0)){
+    weird$reason="weird Other: gave .edu email2, but not sign as student and/or claimed non-edu email"
+  }
   
   if(nrow(log_this)+nrow(nonedu_email)==0){
     return(log_this)
@@ -290,16 +292,7 @@ student_email=function(df){
 # inputs: 
 #     df = subset of qualtrics data of only the relevant dates
 uchicago_email=function(df){
-  
-  #updating email fin for students with proper emails
-  qualtrics$email_fin=ifelse(qualtrics$student!="Not student" & endsWith(qualtrics$email1,".edu"),
-                             qualtrics$email1,
-                             qualtrics$email_fin)
-  #updating email fin for nonstudents
-  qualtrics$email_fin=ifelse(qualtrics$student=="Not student",
-                             qualtrics$email1,
-                             qualtrics$email_fin)
-  
+
   update_email=df %>%
     filter(student=="UChicago student") %>%
     filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu"))) %>% 
@@ -325,8 +318,11 @@ uchicago_email=function(df){
   #people who gave edu email, but selected strange choice (not want to sign and/or school doesn't have .edu)
   weird=df%>%filter((endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu"))
                     & (edu_email_reason!="" | not_sign_as_student!=""))
-  weird$reason="weird UChicago: gave .edu email2, but not sign as student and/or claimed non-edu email"
-  weird$flagged=1
+  
+  if(nrow(weird)>0){
+    weird$reason="weird UChicago: gave .edu email2, but not sign as student and/or claimed non-edu email"
+    weird$flagged=1
+  }
   
   if(nrow(log_this)+nrow(nonedu_email)==0){
     return(log_this)
@@ -407,7 +403,7 @@ get_fraud=function(df){
            | Q_RelevantIDDuplicateScore>=75 | Q_RelevantIDFraudScore>=30)
   
   startdate=df %>%
-    filter(Q_RelevantIDLastStartDate!="") #startdate is NOT empty########################################################
+    filter(!is.na(Q_RelevantIDLastStartDate)) 
   
   dat=rbind(fraud,blank,startdate)
   
@@ -439,8 +435,6 @@ df=get_dated_df(qualtrics,date_begin,date_end)
 # 4a
 under18=get_under_18(df) #flag and do not upload
 
-# 4bi
-duplicateIP=get_duplicateIP(qualtrics,date_begin,date_end)
 # 4biii
 ip_block=IPblock(df) #put in discuss, do not upload
 
@@ -449,7 +443,7 @@ newflags=get_new_flags(flagged_participants, df)
 
 # 4d
 #eyeball check
-joke_test=df[which(df$`18older`=="Yes"),c("joke","rowID")] #exclude under 18
+joke_test=df[which(df$`18older`=="Yes"),c("rowID","joke")] #exclude under 18
 View(joke_test)
 weird_jokeID=c() #UPDATE: if jokes are weird, put its rowID in the "c()"
 # e.g. c(5702,5676,3048)
@@ -469,15 +463,25 @@ sona_duplicate=get_sona_duplicates(df) #discuss; upload at discretion
 # 4h
 fraud=get_fraud(df) # do not upload. discuss if student. #UPDATE
 
+# 4bi
+#note that all these dfs are sorted by IP
+duplicateIP=get_duplicateIP(qualtrics,date_begin,date_end)
+dupIPstudent=duplicateIP[which(duplicateIP$reason=="duplicate IP - student")] 
+dupIPother=duplicateIP[which(duplicateIP$reason=="duplicate IP")]
+
 # putting CSVs together
 
 # Discuss
-discuss=rbind(duplicateIP,duplicateIP_student, ip_block,logstudents,
+discuss=rbind(ip_block,logstudents, dupIPother, #only nonstudents
               loguchicago,sona_duplicate, weirdjoke,
               fraud[which(fraud$reason!="fraud score threshold"),]) #students or blank
 discuss=discuss[order(discuss$StartDate, discuss$rowID, discuss$reason),] 
 
-write.csv(discuss,paste(as.Date(date_begin),"_to_discuss.csv",sep=""))
+discussfin=discuss
+#create indicator of 1 if participant is in current period
+discussfin$current=ifelse(discussfin$StartDate>=as_datetime(date_begin) & discussfin$StartDate<=as_datetime(date_end),1,0)
+#do we not want to group by IP to check for duplicates??????????????????????????????????????????????????????????????????????????????????
+write.csv(discussfin,paste(as.Date(date_begin),"_to_discuss.csv",sep=""))
 
 # do not upload
 do_not_upload=rbind(under18,ip_block,country_mismatch,fraud[which(fraud$reason=="fraud score threshold"),],newflags)
@@ -491,11 +495,16 @@ dont_upload_id=unique(do_not_upload$rowID)
 
 `%notin%` <- Negate(`%in%`)
 
-unsure=discuss[which(discuss$rowID %notin% dont_upload_id),] #in discuss, but NOT don't upload
+unsure=discuss[which(discuss$rowID[which(discuss$StartDate>=as_datetime(date_begin)&discuss$StartDate<=as_datetime(date_end))] 
+                     %notin% dont_upload_id),] #in current discuss, but NOT don't upload
+dupIPstudent=dupIPstudent[which(dupIPstudent$StartDate>=as_datetime(date_begin) & 
+                                  dupIPstudent$StartDate<=as_datetime(date_end)),] #filtering for only students in current period ######################################################
+okaystudents=dupIPstudent[which(dupIPstudent$rowID %notin% discuss$rowID 
+                                 | dupIPstudent$rowID %notin% do_not_upload$rowID),] #add in the dupIPstudents whose ONLY issue is dupIP
 
 upload_check=df[-which(df$rowID %in% dont_upload_id),] #remove do not upload from uploads
 upload_check=upload_check[-which(upload_check$rowID %in% unsure$rowID)] #remove participants with discuss items from upload, replace with df of reasons
-upload_check=rbind(upload_check,unsure)
+upload_check=rbind(upload_check,unsure,okaystudents)
 upload_check=upload_check[order(upload_check$StartDate, upload_check$rowID, upload_check$reason),]
 
 write.csv(upload_check,paste(as.Date(date_begin),"_upload_check.csv",sep=""))

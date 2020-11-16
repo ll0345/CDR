@@ -153,7 +153,7 @@ get_duplicateIP=function(qualtrics,date_begin,date_end){
   other=qualtrics[-today$rowID,] #all other qualtrics data
   
   #finding duplicates
-  test=today[which(today$IPAddress %in% other$IPAddress),]#######################################is this implemented properly
+  test=today[which(today$IPAddress %in% other$IPAddress),]
   test2=other[which(other$IPAddress %in% today$IPAddress),]
   
   ids=unique(c(test$rowID,test2$rowID))
@@ -180,7 +180,7 @@ IPblock=function(df){
     return(block)
   }
   
-  block$reason=ifelse(block$IP_block==1,"IP block 1","IP block 2") #####################test this
+  block$reason=ifelse(block$IP_block==1,"IP block 1","IP block 2")
   
   return(block)
 }
@@ -321,7 +321,7 @@ uchicago_email=function(df){
   
   if(nrow(weird)>0){
     weird$reason="weird UChicago: gave .edu email2, but not sign as student and/or claimed non-edu email"
-    weird$flagged=1
+    weird$flagged=0
   }
   
   if(nrow(log_this)+nrow(nonedu_email)==0){
@@ -498,7 +498,7 @@ dont_upload_id=unique(do_not_upload$rowID)
 unsure=discuss[which(discuss$rowID[which(discuss$StartDate>=as_datetime(date_begin)&discuss$StartDate<=as_datetime(date_end))] 
                      %notin% dont_upload_id),] #in current discuss, but NOT don't upload
 dupIPstudent=dupIPstudent[which(dupIPstudent$StartDate>=as_datetime(date_begin) & 
-                                  dupIPstudent$StartDate<=as_datetime(date_end)),] #filtering for only students in current period ######################################################
+                                  dupIPstudent$StartDate<=as_datetime(date_end)),] #filtering for only students in current period 
 okaystudents=dupIPstudent[which(dupIPstudent$rowID %notin% discuss$rowID 
                                  | dupIPstudent$rowID %notin% do_not_upload$rowID),] #add in the dupIPstudents whose ONLY issue is dupIP
 

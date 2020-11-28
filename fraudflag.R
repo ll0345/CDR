@@ -23,7 +23,7 @@ setwd("~/CDR/participant fraud")        #UPDATE
 sona=fread("course_report_0.csv")[,1:5] #UPDATE
 qualtrics=fread("Virtual+Lab+-+New+Participant+Intake+form_November+16,+2020_13.24.csv") #UPDATE
 
-#optional: upload flagged participants as CSV
+#upload flagged participants as CSV
 #must remove "headings" for each type of flag in CSV
 flagged_participants=fread("flagged participants.csv") #UPDATE
 flagged_participants=flagged_participants[which(flagged_participants$date!=""),]
@@ -168,13 +168,15 @@ get_duplicateIP=function(qualtrics,date_begin,date_end){
 #     df = subset of qualtrics data of only the relevant dates
 IPblock=function(df){
   block=df %>%
-    filter(IP_block<=1)
+    filter(IP_block>=1)
   
   if(nrow(block)==0){
     return(block)
   }
   
-  block$reason=ifelse(block$IP_block==1,"IP block=1","IP block=2")
+  block$reason=ifelse(block$IP_block==1,"IP block=1",
+                      ifelse(block$IP_block==2,"IP block=2",
+                             block$reason))
   
   return(block)
 }
@@ -396,8 +398,7 @@ get_fraud=function(df){
   
   #also add if fraud scores are blank (recaptcha, duplicate, fraud); flag as fraud score blank
   blank=df %>%
-    filter(is.na(Q_RecaptchaScore) | Q_RelevantIDDuplicate=="" 
-           | is.na(Q_RelevantIDDuplicateScore) | is.na(Q_RelevantIDFraudScore))
+    filter(is.na(Q_RecaptchaScore) | is.na(Q_RelevantIDDuplicateScore) | is.na(Q_RelevantIDFraudScore))
   
   fraud=df %>%
     filter(Q_RecaptchaScore<=0.5 | Q_RelevantIDDuplicate=="true" 
@@ -412,9 +413,15 @@ get_fraud=function(df){
     return(dat)
   }
   
-  blank$reason="fraud score blank"
-  startdate$reason="last startdate"
-  fraud$reason=ifelse(fraud$student=="Not student","fraud score threshold","fraud score threshold - student")
+  if(nrow(blank!=0)){
+    blank$reason="fraud score blank"
+  }
+  if(nrow(startdate!=0)){
+    startdate$reason="last startdate"
+  }
+  if(nrow(fraud!=0)){
+    fraud$reason=ifelse(fraud$student=="Not student","fraud score threshold","fraud score threshold - student")
+  }
   return(rbind(fraud,blank,startdate))
 }
 
@@ -462,7 +469,7 @@ country_mismatch=get_country_mismatch(df) #put in discuss, do not upload
 sona_duplicate=get_sona_duplicates(df) #discuss; upload at discretion
 
 # 4h
-fraud=get_fraud(df) # do not upload. discuss if student. #UPDATE
+fraud=get_fraud(df) # do not upload. discuss if student. 
 
 # 4bi
 #note that all these dfs are sorted by IP
@@ -476,7 +483,7 @@ dupIPother=duplicateIP[which(duplicateIP$reason=="duplicate IP")]
 discuss=rbind(ip_block,logstudents, dupIPother, #only nonstudents
               loguchicago,sona_duplicate, weirdjoke,
               fraud[which(fraud$reason!="fraud score threshold"),]) #students or blank
-discuss=discuss[order(discuss$StartDate, discuss$IPAddress, discuss$rowID, discuss$reason),] #??????????????????????????????????????????????????????????????????
+discuss=discuss[order(discuss$StartDate, discuss$IPAddress, discuss$rowID, discuss$reason),] 
 
 discussfin=discuss
 #create indicator of 1 if participant is in current period

@@ -19,9 +19,9 @@ require(lubridate)
 # You can check what your current directory is by typing getwd() into the Console
 # the CSV files in the fread function can be downloaded directly from SONA/Qualtrics
 
-setwd("C:/Users/Linfei Li/Downloads")        #UPDATE
-sona=fread("12_14 course_report_0 (26).csv")[,1:5] #UPDATE
-qualtrics=fread("12_14 Virtual Lab - New Participant Intake form_December 14, 2020_19.04.csv") #UPDATE
+setwd("C:/Users/Linfei Li/Downloads") #UPDATE
+sona=fread("12_18 course_report_0 (28).csv")[,1:5] #UPDATE
+qualtrics=fread("C:/Users/Linfei Li/Documents/CDR/participant fraud/decemberparticipantdata.csv") #UPDATE
 
 #upload flagged participants as CSV
 #must remove "headings" for each type of flag in CSV
@@ -33,7 +33,7 @@ flagged_participants=flagged_participants[which(flagged_participants$date!=""),]
 # Minor data cleaning
 
 #removing observations that are survey previews or additional text descriptions in first 2 rows
-qualtrics=qualtrics[-c(1:2,which(qualtrics$Status=="Survey Preview")),]
+qualtrics=qualtrics[-c(1:2,which(qualtrics$Status=="Survey Preview")),] #################$$$$4update?
 
 #renaming columns
 names(qualtrics)[23] <- "First Name"
@@ -44,9 +44,38 @@ names(flagged_participants)[5] <- "First Name"
 names(flagged_participants)[6] <- "Last Name"
 
 #getting startdate into date format
-qualtrics$StartDate=as.POSIXct(qualtrics$StartDate,format="%m/%d/%y %H:%M")
+
+(init_date=str_split(as.character(qualtrics$StartDate[1])," ",simplify=T)[1])
+init_date="2020-10-11" #"10-10-2020" #"2020/11/10" #10/10/2020
+separator="/"
+if(grepl("-",init_date,fixed=T)){
+  separator="-"
+}
+date_split=str_split(init_date,separator,simplify=T)
+year="y"
+if(4 %in% sapply(date_split,nchar)){ 
+  year="Y" #4 digit year
+}
+if(nchar(date_split[1])==2){ #first char is month; mdy format
+  qualtrics$StartDate=as.POSIXct(qualtrics$StartDate,
+                                 format=paste("%m",separator,"%d",separator,"%",year," %H:%M:%S",sep=""))
+  qualtrics$EndDate=as.POSIXct(qualtrics$EndDate,
+                               format=paste("%m",separator,"%d",separator,"%",year," %H:%M:%S",sep=""))
+} else { #ymd format
+  qualtrics$StartDate=as.POSIXct(qualtrics$StartDate,
+                                 format=paste("%",year,separator,"%m",separator,"%d %H:%M",sep=""))
+  qualtrics$EndDate=as.POSIXct(qualtrics$EndDate,
+                               format=paste("%",year,separator,"%m",separator,"%d %H:%M",sep=""))
+}
 qualtrics$StartDate=as_datetime(substr(as.character(qualtrics$StartDate),1,nchar(as.character(qualtrics$StartDate))-3),
                                 format="%Y-%m-%d %H:%M")
+qualtrics$EndDate=as_datetime(substr(as.character(qualtrics$EndDate),1,nchar(as.character(qualtrics$EndDate))-3),
+                              format="%Y-%m-%d %H:%M")
+
+if(is.na(qualtrics$StartDate[1])){
+  warning("Date format incorrect")
+}
+
 flagged_participants$date=as.Date(flagged_participants$date, format = "%m/%d/%Y")
 
 #trimming space after emails
@@ -112,10 +141,11 @@ concat_names=function(df){
 get_dated_df=function(qualtrics,date_begin,date_end){
   
   df=qualtrics %>%
-    filter(StartDate>=as_datetime(date_begin) & StartDate<=as_datetime(date_end))
+    filter((StartDate>=as_datetime(date_begin) & StartDate<=as_datetime(date_end)) | 
+             (EndDate>=as_datetime(date_begin) & EndDate<=as_datetime(date_end))) #12/23 end date fix for surveys that last 2+ days
   
   if(nrow(df)==0){
-    print("Warning! No participants were recorded in date range.")
+    warning("Warning! No participants were recorded in date range.")
   }
   
   return(df)
@@ -226,10 +256,14 @@ get_new_flags=function(flagged_participants,df){
     return(dat)
   }
   
-  IP$reason="IP in flagged"
-  IP$flagged=1
-  name$reason="name in flagged"
-  name$flagged=1
+  if(nrow(IP)>0){
+    IP$reason="IP in flagged"
+    IP$flagged=1
+  }
+  if(nrow(name)>0){
+    name$reason="name in flagged"
+    name$flagged=1
+  }
   
   return(rbind(name,IP))
 }
@@ -243,28 +277,35 @@ get_new_flags=function(flagged_participants,df){
 #     df = subset of qualtrics data of only the relevant dates
 student_email=function(df1){
   
-  update_email=df1 %>%
+  bad_email2=df1 %>%
     filter(student=="Other student") %>%
     filter(!endsWith(email1,".edu")) %>% #did not use .edu address at first
-    filter(endsWith(edu_email2, ".edu") & edu_email_reason=="" & not_sign_as_student=="") %>% #provided a .edu address at second chance and signed as student. 
-    select(rowID,edu_email2)
-  
-  #updating email_fin with edu email at second opportunity permanently
-  #qualtrics$email_fin[which(qualtrics$rowID %in% update_email$rowID)]<-update_email$edu_email2 ##########################################################################################
-  df$email_fin[which(df$rowID %in% update_email$rowID)]<-update_email$edu_email2 ##########################################################################################
-  df1$email_fin[which(df1$rowID %in% update_email$rowID)]<-update_email$edu_email2 ##########################################################################################
+    filter(!(endsWith(edu_email2, ".edu")|(email1!="" & edu_email2=="")) & #did not provide email2 or email2 doesnt end in .edu
+             edu_email_reason=="" & not_sign_as_student=="") #did not provide a .edu address at second chance and signed as student. 
+    
+  if(nrow(bad_email2)>0){
+    bad_email2$reason="Other student who provided non-.edu email at second chance w/o good reason"
+  }
   
   #ID as student, but email not end in .edu
   nonedu_email=df1 %>%
     filter(student=="Other student") %>%
     filter(edu_email_reason!="")
   
+  if(nrow(nonedu_email>0)){
+    nonedu_email$reason="my school has a non-edu email"
+  }
+  
   #ID as student, but not want to sign as student
-  # note that someone can both say they don't have .edy and not want to sign as student
+  # note that someone can both say they don't have .edu and not want to sign as student
   # in which case they would show up twice in df
   log_this=df1 %>%
     filter(student=="Other student") %>%
     filter(not_sign_as_student=="I don't want to sign up as a student") 
+  
+  if(nrow(log_this>0)){
+    log_this$reason="not want to sign as student - Other"
+  }
   
   #people who gave edu email, but selected strange choice (not want to sign and/or school doesn't have .edu)
   weird=df1%>%filter(endsWith(edu_email2, ".edu") & (edu_email_reason!="" | not_sign_as_student!=""))
@@ -273,17 +314,11 @@ student_email=function(df1){
     weird$reason="weird Other: gave .edu email2, but not sign as student and/or claimed non-edu email"
   }
   
-  if(nrow(log_this)+nrow(nonedu_email)==0){
+  if(nrow(log_this)+nrow(nonedu_email)+nrow(bad_email2)==0){
     return(log_this)
   }
-  if(nrow(nonedu_email>0)){
-    nonedu_email$reason="my school has a non-edu email"
-  }
-  if(nrow(log_this>0)){
-    log_this$reason="not sign as student"
-  }
-  dat=rbind(log_this,nonedu_email) 
-  dat=rbind(dat,weird)
+  
+  dat=rbind(log_this,nonedu_email,weird,bad_email2) 
   return(dat) 
 }
 
@@ -298,22 +333,32 @@ student_email=function(df1){
 #     df = subset of qualtrics data of only the relevant dates
 uchicago_email=function(df1){
   
-  update_email=df1 %>%
+  # update_email=df1 %>%
+  #   filter(student=="UChicago student") %>%
+  #   filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu"))) %>% 
+  #   filter((endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu")) 
+  #          & edu_email_reason=="" & not_sign_as_student=="")%>% 
+  #   select(rowID,edu_email2)
+  # 
+  bad_email2=df1 %>%
     filter(student=="UChicago student") %>%
     filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu"))) %>% 
-    filter((endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu")) 
-           & edu_email_reason=="" & not_sign_as_student=="")%>% 
-    select(rowID,edu_email2)
+    filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu")
+             |(email1!="" & edu_email2=="")) & #did not provide email2 or email2 doesnt end in .edu
+             edu_email_reason=="" & not_sign_as_student=="") #did not provide a .edu address at second chance and signed as student. 
   
-  #updating email_fin with edu email at second opportunity permanently
-  #qualtrics$email_fin[which(qualtrics$rowID %in% update_email$rowID)]<-update_email$edu_email2
-  df$email_fin[which(df$rowID %in% update_email$rowID)]<-update_email$edu_email2 ##########################################################################################
-  df1$email_fin[which(df1$rowID %in% update_email$rowID)]<-update_email$edu_email2 ##########################################################################################
-  
+  if(nrow(bad_email2)>0){
+    bad_email2$reason="UChicago student who provided non-.edu email at second chance w/o good reason"
+  }
   #ID as student, but email not end in .edu
   nonedu_email=df1 %>%
     filter(student=="UChicago student") %>%
     filter(edu_email_reason!="")
+  
+  if(nrow(nonedu_email)>0){
+    nonedu_email$reason="LIES: my school has a non-edu email - UChicago"
+    nonedu_email$flagged=1
+  }
   
   #ID as student, but not want to sign as student
   # note that someone can both say they don't have .edy and not want to sign as student
@@ -321,6 +366,11 @@ uchicago_email=function(df1){
   log_this=df1 %>%
     filter(student=="UChicago student") %>%
     filter(not_sign_as_student=="I don't want to sign up as a student") 
+  
+  if(nrow(log_this)>0){
+    log_this$reason="not sign as student - UChicago"
+    log_this$flagged=1
+  }
   
   #people who gave edu email, but selected strange choice (not want to sign and/or school doesn't have .edu)
   weird=df1%>%filter((endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu"))
@@ -331,22 +381,11 @@ uchicago_email=function(df1){
     weird$flagged=0
   }
   
-  if(nrow(log_this)+nrow(nonedu_email)==0){
+  if(nrow(log_this)+nrow(nonedu_email)+nrow(bad_email2)==0){
     return(log_this)
   }
   
-  if(nrow(nonedu_email)>0){
-    nonedu_email$reason="LIES: my school has a non-edu email - UChicago"
-    nonedu_email$flagged=1
-  }
-  if(nrow(log_this)>0){
-    log_this$reason="not sign as student - UChicago"
-    log_this$flagged=1
-  }
-  
-  dat=rbind(log_this,nonedu_email) 
-  #dat=dat[-which(dat$rowID %in% weird$rowID),] 
-  dat=rbind(dat,weird)
+  dat=rbind(log_this,nonedu_email,weird,bad_email2) 
   return(dat[order(dat$rowID),]) 
 }
 
@@ -431,7 +470,9 @@ get_fraud=function(df){
     startdate$reason="last startdate"
   }
   if(nrow(fraud!=0)){
-    fraud$reason=ifelse(fraud$student=="Not student","fraud score threshold","fraud score threshold - student")
+    fraud$reason=ifelse(fraud$student=="Not student",
+                        "fraud score threshold",
+                        "fraud score threshold - student")
   }
   return(rbind(fraud,blank,startdate))
 }
@@ -442,8 +483,8 @@ get_fraud=function(df){
 
 #input date range
 #YYYY-MM-DD HH:MM:SS"
-date_begin="2020-12-11 11:38:00" #UPDATE
-date_end="2020-12-14 13:11:00"   #UPDATE
+date_begin="2020-04-06 13:21:00" #UPDATE
+date_end="2020-12-02 11:59:00"   #UPDATE
 
 # step 3
 
@@ -468,7 +509,7 @@ newflags=get_new_flags(flagged_participants, df)
 #eyeball check
 joke_test=df[which(df$age=="Yes"),c("rowID","joke")] #exclude under 18
 View(joke_test)
-weird_jokeID=c(6615, 6617, 6620, 6622) #UPDATE: if jokes are weird, put its rowID in the "c()"
+weird_jokeID=c() #UPDATE: if jokes are weird, put its rowID in the "c()"
 # e.g. c(5702,5676,3048)
 
 weirdjoke=get_jokes(df,weird_jokeID)
@@ -503,7 +544,7 @@ discussfin$current=ifelse(discussfin$StartDate>=as_datetime(date_begin) & discus
 discussfin=subset(discussfin,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
                                        RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
                                        UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-write.csv(discussfin,paste(as.Date(date_begin),"_to_discuss.csv",sep=""))
+write.csv(discussfin,paste(as.Date(date_end),"_to_discuss.csv",sep=""))
 
 # do not upload
 do_not_upload=rbind(under18,ip_block,country_mismatch,fraud[which(fraud$reason=="fraud score threshold"),],newflags)
@@ -512,7 +553,7 @@ do_not_upload=do_not_upload[order(do_not_upload$StartDate, do_not_upload$rowID, 
 do_not_upload=subset(do_not_upload,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
                                              RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
                                              UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-write.csv(do_not_upload,paste(as.Date(date_begin),"_do_not_upload.csv",sep=""))
+write.csv(do_not_upload,paste(as.Date(date_end),"_do_not_upload.csv",sep=""))
 
 #start to look for uploadables here
 discuss_id=unique(discuss$rowID)
@@ -535,5 +576,5 @@ upload_check=upload_check[order(upload_check$StartDate, upload_check$rowID, uplo
 upload_check=subset(upload_check,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
                                            RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
                                            UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-write.csv(upload_check,paste(as.Date(date_begin),"_upload_check.csv",sep=""))
+write.csv(upload_check,paste(as.Date(date_end),"_upload_check.csv",sep=""))
 

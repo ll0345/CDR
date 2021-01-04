@@ -13,15 +13,16 @@ require(dplyr)
 require(stringr)
 require(lubridate)
 
-# loading in data
+# loading in data 1/3/2021
 
 # First, set your working directory here. This is the folder that you'd want all your output to be downloaded to.
 # You can check what your current directory is by typing getwd() into the Console
 # the CSV files in the fread function can be downloaded directly from SONA/Qualtrics
 
-setwd("C:/Users/Linfei Li/Downloads") #UPDATE
-sona=fread("12_18 course_report_0 (28).csv")[,1:5] #UPDATE
-qualtrics=fread("C:/Users/Linfei Li/Documents/CDR/participant fraud/decemberparticipantdata.csv") #UPDATE
+setwd("C:/Users/Linfei Li/Documents/CDR/participant fraud") #UPDATE
+sona=fread("course_report_0.csv")[,1:5] #UPDATE
+qualtrics=fread("C:/Users/Linfei Li/Downloads/testdata.csv") #UPDATE
+qualtricsorig=fread("decemberparticipantdata.csv")
 
 #upload flagged participants as CSV
 #must remove "headings" for each type of flag in CSV
@@ -33,7 +34,7 @@ flagged_participants=flagged_participants[which(flagged_participants$date!=""),]
 # Minor data cleaning
 
 #removing observations that are survey previews or additional text descriptions in first 2 rows
-qualtrics=qualtrics[-c(1:2,which(qualtrics$Status=="Survey Preview")),] #################$$$$4update?
+qualtrics=qualtrics[-c(1:2,which(qualtrics$Status=="Survey Preview")),] 
 
 #renaming columns
 names(qualtrics)[23] <- "First Name"
@@ -46,7 +47,6 @@ names(flagged_participants)[6] <- "Last Name"
 #getting startdate into date format
 
 (init_date=str_split(as.character(qualtrics$StartDate[1])," ",simplify=T)[1])
-init_date="2020-10-11" #"10-10-2020" #"2020/11/10" #10/10/2020
 separator="/"
 if(grepl("-",init_date,fixed=T)){
   separator="-"
@@ -58,9 +58,9 @@ if(4 %in% sapply(date_split,nchar)){
 }
 if(nchar(date_split[1])==2){ #first char is month; mdy format
   qualtrics$StartDate=as.POSIXct(qualtrics$StartDate,
-                                 format=paste("%m",separator,"%d",separator,"%",year," %H:%M:%S",sep=""))
+                                 format=paste("%m",separator,"%d",separator,"%",year," %H:%M",sep=""))
   qualtrics$EndDate=as.POSIXct(qualtrics$EndDate,
-                               format=paste("%m",separator,"%d",separator,"%",year," %H:%M:%S",sep=""))
+                               format=paste("%m",separator,"%d",separator,"%",year," %H:%M",sep=""))
 } else { #ymd format
   qualtrics$StartDate=as.POSIXct(qualtrics$StartDate,
                                  format=paste("%",year,separator,"%m",separator,"%d %H:%M",sep=""))
@@ -280,8 +280,7 @@ student_email=function(df1){
   bad_email2=df1 %>%
     filter(student=="Other student") %>%
     filter(!endsWith(email1,".edu")) %>% #did not use .edu address at first
-    filter(!(endsWith(edu_email2, ".edu")|(email1!="" & edu_email2=="")) & #did not provide email2 or email2 doesnt end in .edu
-             edu_email_reason=="" & not_sign_as_student=="") #did not provide a .edu address at second chance and signed as student. 
+    filter((!endsWith(edu_email2, ".edu") & edu_email_reason=="" & not_sign_as_student=="")) #did not provide a .edu address at second chance and signed as student. 
     
   if(nrow(bad_email2)>0){
     bad_email2$reason="Other student who provided non-.edu email at second chance w/o good reason"
@@ -290,6 +289,7 @@ student_email=function(df1){
   #ID as student, but email not end in .edu
   nonedu_email=df1 %>%
     filter(student=="Other student") %>%
+    filter(!(endsWith(email1,".edu")|endsWith(edu_email2,".edu"))) %>% 
     filter(edu_email_reason!="")
   
   if(nrow(nonedu_email>0)){
@@ -301,7 +301,7 @@ student_email=function(df1){
   # in which case they would show up twice in df
   log_this=df1 %>%
     filter(student=="Other student") %>%
-    filter(not_sign_as_student=="I don't want to sign up as a student") 
+    filter(not_sign_as_student!="") 
   
   if(nrow(log_this>0)){
     log_this$reason="not want to sign as student - Other"
@@ -332,27 +332,21 @@ student_email=function(df1){
 # inputs: 
 #     df = subset of qualtrics data of only the relevant dates
 uchicago_email=function(df1){
-  
-  # update_email=df1 %>%
-  #   filter(student=="UChicago student") %>%
-  #   filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu"))) %>% 
-  #   filter((endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu")) 
-  #          & edu_email_reason=="" & not_sign_as_student=="")%>% 
-  #   select(rowID,edu_email2)
-  # 
+ 
   bad_email2=df1 %>%
     filter(student=="UChicago student") %>%
     filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu"))) %>% 
-    filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu")
-             |(email1!="" & edu_email2=="")) & #did not provide email2 or email2 doesnt end in .edu
-             edu_email_reason=="" & not_sign_as_student=="") #did not provide a .edu address at second chance and signed as student. 
+    filter((!(endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu"))
+           & edu_email_reason=="" & not_sign_as_student=="")) #did not provide a .edu address at second chance and signed as student. 
   
   if(nrow(bad_email2)>0){
-    bad_email2$reason="UChicago student who provided non-.edu email at second chance w/o good reason"
+    bad_email2$reason="UChicago student who provided non-Uchicago email at second chance w/o good reason"
   }
   #ID as student, but email not end in .edu
   nonedu_email=df1 %>%
     filter(student=="UChicago student") %>%
+    filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu")|
+               endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu"))) %>%
     filter(edu_email_reason!="")
   
   if(nrow(nonedu_email)>0){
@@ -365,7 +359,7 @@ uchicago_email=function(df1){
   # in which case they would show up twice in df
   log_this=df1 %>%
     filter(student=="UChicago student") %>%
-    filter(not_sign_as_student=="I don't want to sign up as a student") 
+    filter(not_sign_as_student!="") 
   
   if(nrow(log_this)>0){
     log_this$reason="not sign as student - UChicago"
@@ -385,7 +379,7 @@ uchicago_email=function(df1){
     return(log_this)
   }
   
-  dat=rbind(log_this,nonedu_email,weird,bad_email2) 
+  dat=rbind(log_this,nonedu_email,weird,bad_email2)
   return(dat[order(dat$rowID),]) 
 }
 
@@ -483,8 +477,8 @@ get_fraud=function(df){
 
 #input date range
 #YYYY-MM-DD HH:MM:SS"
-date_begin="2020-04-06 13:21:00" #UPDATE
-date_end="2020-12-02 11:59:00"   #UPDATE
+date_begin="2020-11-14 01:21:00" #UPDATE
+date_end="2020-11-16 11:59:00"   #UPDATE
 
 # step 3
 

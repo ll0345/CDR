@@ -188,8 +188,10 @@ get_duplicateIP=function(qualtrics,date_begin,date_end){
   #finding duplicates
   test=today[which(today$IPAddress %in% other$IPAddress),]
   test2=other[which(other$IPAddress %in% today$IPAddress),]
+  today_ip=today$IPAddress[which(duplicated(today$IPAddress))]
+  test3=today[which(today$IPAddress %in% today_ip),]
   
-  ids=unique(c(test$rowID,test2$rowID))
+  ids=unique(c(test$rowID,test2$rowID,test3$rowID))
   
   df=qualtrics[which(qualtrics$rowID %in% ids),]
   
@@ -418,9 +420,9 @@ get_sona_duplicates=function(df){
   sonaemail=sona$Email 
   
   #getting rowIDs that correspond to duplicates in SONA
-  name_id=df$rowID[which(copy$fullname %in% sonanames)]
+  name_id=copy$rowID[which(copy$fullname %in% sonanames)]
   #check both orig and "updated" email
-  email_id=df$rowID[which(df$email1 %in% sonaemail | df$email_fin %in% sonaemail)] 
+  email_id=copy$rowID[which(df$email1 %in% sonaemail | df$email_fin %in% sonaemail)] 
   
   name=df[which(df$rowID%in%name_id),]
   
@@ -479,9 +481,9 @@ get_fraud=function(df){
 ###############################################################################################
 
 #input date range
-#YYYY-MM-DD HH:MM:SS"
+#YYYY-MM-DD HH:MM:SS" HH=00-23, MM=00-59
 date_begin="2020-12-18 22:31:00" #UPDATE
-date_end="2021-01-04 11:59:00"   #UPDATE
+date_end="2021-01-04 23:59:00"   #UPDATE
 
 # step 3
 

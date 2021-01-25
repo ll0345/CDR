@@ -13,27 +13,26 @@ require(dplyr)
 require(stringr)
 require(lubridate)
 
-# loading in data 1/3/2021
+# loading in data 1/25/2021
 
 # First, set your working directory here. This is the folder that you'd want all your output to be downloaded to.
 # You can check what your current directory is by typing getwd() into the Console
 # the CSV files in the fread function can be downloaded directly from SONA/Qualtrics
 
 setwd("C:/Users/Linfei Li/Documents/CDR/participant fraud") #UPDATE
-sona=fread("course_report_0.csv")[,1:5] #UPDATE
-qualtrics=fread("C:/Users/Linfei Li/Downloads/testdata.csv") #UPDATE
-qualtricsorig=fread("decemberparticipantdata.csv")
+sona=fread("1_4 course_report_0 (29).csv")[,1:5] #UPDATE
+qualtrics=fread("1_4 Virtual Lab - New Participant Intake form_January 4, 2021_18.32.csv") #UPDATE
 
 #upload flagged participants as CSV
 #must remove "headings" for each type of flag in CSV
-flagged_participants=fread("C:/Users/Linfei Li/Documents/CDR/participant fraud/flagged participants.csv", header = TRUE) #UPDATE
+flagged_participants=fread("flagged participants (1).csv", header = TRUE) #UPDATE
 flagged_participants=flagged_participants[which(flagged_participants$date!=""),]
 
 ##############################################################################################
-
 # Minor data cleaning
+##############################################################################################
 
-#removing observations that are survey previews or additional text descriptions in first 2 rows
+#removing observations that are survey previews/additional text descriptions in first 2 rows
 qualtrics=qualtrics[-c(1:2,which(qualtrics$Status=="Survey Preview")),] 
 
 #renaming columns
@@ -41,8 +40,8 @@ names(qualtrics)[23] <- "First Name"
 names(qualtrics)[24] <- "Last Name"
 names(qualtrics)[25] <- "email1"
 
-names(flagged_participants)[5] <- "First Name"
-names(flagged_participants)[6] <- "Last Name"
+names(flagged_participants)[5] <- "First Name" 
+names(flagged_participants)[6] <- "Last Name"  # updated???????
 
 #getting startdate into date format
 
@@ -56,7 +55,7 @@ year="y"
 if(4 %in% sapply(date_split,nchar)){ 
   year="Y" #4 digit year
 }
-if(nchar(date_split[1])==2){ #first char is month; mdy format
+if(nchar(date_split[1])<=2){ #first char is month; mdy format
   qualtrics$StartDate=as.POSIXct(qualtrics$StartDate,
                                  format=paste("%m",separator,"%d",separator,"%",year," %H:%M",sep=""))
   qualtrics$EndDate=as.POSIXct(qualtrics$EndDate,
@@ -72,8 +71,9 @@ qualtrics$StartDate=as_datetime(substr(as.character(qualtrics$StartDate),1,nchar
 qualtrics$EndDate=as_datetime(substr(as.character(qualtrics$EndDate),1,nchar(as.character(qualtrics$EndDate))-3),
                               format="%Y-%m-%d %H:%M")
 
-if(is.na(qualtrics$StartDate[1])){
+if(sum(sapply(qualtrics$StartDate,is.na))>0){
   warning("Date format incorrect")
+  print(rownames(qualtrics[which(is.na(qualtrics$StartDate))]))
 }
 
 flagged_participants$date=as.Date(flagged_participants$date, format = "%m/%d/%Y")
@@ -185,8 +185,10 @@ get_duplicateIP=function(qualtrics,date_begin,date_end){
   #finding duplicates
   test=today[which(today$IPAddress %in% other$IPAddress),]
   test2=other[which(other$IPAddress %in% today$IPAddress),]
+  today_ip=today$IPAddress[which(duplicated(today$IPAddress))]
+  test3=today[which(today$IPAddress %in% today_ip),]
   
-  ids=unique(c(test$rowID,test2$rowID))
+  ids=unique(c(test$rowID,test2$rowID,test3$rowID))
   
   df=qualtrics[which(qualtrics$rowID %in% ids),]
   
@@ -281,7 +283,7 @@ student_email=function(df1){
     filter(student=="Other student") %>%
     filter(!endsWith(email1,".edu")) %>% #did not use .edu address at first
     filter((!endsWith(edu_email2, ".edu") & edu_email_reason=="" & not_sign_as_student=="")) #did not provide a .edu address at second chance and signed as student. 
-    
+  
   if(nrow(bad_email2)>0){
     bad_email2$reason="Other student who provided non-.edu email at second chance w/o good reason"
   }
@@ -332,12 +334,12 @@ student_email=function(df1){
 # inputs: 
 #     df = subset of qualtrics data of only the relevant dates
 uchicago_email=function(df1){
- 
+  
   bad_email2=df1 %>%
     filter(student=="UChicago student") %>%
     filter(!(endsWith(email1,"uchicago.edu")|endsWith(email1,"chicagobooth.edu"))) %>% 
     filter((!(endsWith(edu_email2,"uchicago.edu")|endsWith(edu_email2,"chicagobooth.edu"))
-           & edu_email_reason=="" & not_sign_as_student=="")) #did not provide a .edu address at second chance and signed as student. 
+            & edu_email_reason=="" & not_sign_as_student=="")) #did not provide a .edu address at second chance and signed as student. 
   
   if(nrow(bad_email2)>0){
     bad_email2$reason="UChicago student who provided non-Uchicago email at second chance w/o good reason"
@@ -415,9 +417,9 @@ get_sona_duplicates=function(df){
   sonaemail=sona$Email 
   
   #getting rowIDs that correspond to duplicates in SONA
-  name_id=df$rowID[which(copy$fullname %in% sonanames)]
+  name_id=copy$rowID[which(copy$fullname %in% sonanames)]
   #check both orig and "updated" email
-  email_id=df$rowID[which(df$email1 %in% sonaemail | df$email_fin %in% sonaemail)] 
+  email_id=copy$rowID[which(df$email1 %in% sonaemail | df$email_fin %in% sonaemail)] 
   
   name=df[which(df$rowID%in%name_id),]
   
@@ -476,9 +478,9 @@ get_fraud=function(df){
 ###############################################################################################
 
 #input date range
-#YYYY-MM-DD HH:MM:SS"
-date_begin="2020-11-14 01:21:00" #UPDATE
-date_end="2020-11-16 11:59:00"   #UPDATE
+#YYYY-MM-DD HH:MM:SS" HH=00-23, MM=00-59
+date_begin="2020-12-18 22:31:00" #UPDATE
+date_end="2021-01-04 23:59:00"   #UPDATE
 
 # step 3
 
@@ -503,7 +505,7 @@ newflags=get_new_flags(flagged_participants, df)
 #eyeball check
 joke_test=df[which(df$age=="Yes"),c("rowID","joke")] #exclude under 18
 View(joke_test)
-weird_jokeID=c() #UPDATE: if jokes are weird, put its rowID in the "c()"
+weird_jokeID=c(6669,6677,6690,6704,6709,6711,6730,6731,6732) #UPDATE: if jokes are weird, put its rowID in the "c()"
 # e.g. c(5702,5676,3048)
 
 weirdjoke=get_jokes(df,weird_jokeID)
@@ -520,55 +522,36 @@ fraud=get_fraud(df) # do not upload. discuss if student.
 # 4bi
 #note that all these dfs are sorted by IP
 duplicateIP=get_duplicateIP(qualtrics,date_begin,date_end)
-dupIPstudent=duplicateIP[which(duplicateIP$reason=="duplicate IP - student")] 
-dupIPother=duplicateIP[which(duplicateIP$reason=="duplicate IP")]
 
 # putting CSVs together
-
-# Discuss
-discuss=rbind(ip_block,logstudents, dupIPother, #only nonstudents
-              loguchicago,sona_duplicate, weirdjoke,
-              fraud[which(fraud$reason!="fraud score threshold"),]) #students or blank
-discuss=discuss[order(discuss$StartDate, discuss$IPAddress, discuss$rowID, discuss$reason),] 
-
-discussfin=discuss
-#create indicator of 1 if participant is in current period
-discussfin$current=ifelse(discussfin$StartDate>=as_datetime(date_begin) & discussfin$StartDate<=as_datetime(date_end),1,0)
-
-discussfin=subset(discussfin,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
-                                       RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
-                                       UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-write.csv(discussfin,paste(as.Date(date_end),"_to_discuss.csv",sep=""))
-
-# do not upload
-do_not_upload=rbind(under18,ip_block,country_mismatch,fraud[which(fraud$reason=="fraud score threshold"),],newflags)
-do_not_upload=do_not_upload[order(do_not_upload$StartDate, do_not_upload$rowID, do_not_upload$reason),]
-
-do_not_upload=subset(do_not_upload,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
-                                             RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
-                                             UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-write.csv(do_not_upload,paste(as.Date(date_end),"_do_not_upload.csv",sep=""))
-
-#start to look for uploadables here
-discuss_id=unique(discuss$rowID)
-dont_upload_id=unique(do_not_upload$rowID)
-
 `%notin%` <- Negate(`%in%`)
 
-unsure=discuss[which(discuss$rowID[which(discuss$StartDate>=as_datetime(date_begin)&discuss$StartDate<=as_datetime(date_end))] 
-                     %notin% dont_upload_id),] #in current discuss, but NOT don't upload
-dupIPstudent=dupIPstudent[which(dupIPstudent$StartDate>=as_datetime(date_begin) & 
-                                  dupIPstudent$StartDate<=as_datetime(date_end)),] #filtering for only students in current period 
-okaystudents=dupIPstudent[which(dupIPstudent$rowID %notin% discuss$rowID 
-                                | dupIPstudent$rowID %notin% do_not_upload$rowID),] #add in the dupIPstudents whose ONLY issue is dupIP
+DNU=rbind(under18,ip_block,country_mismatch,fraud[which(fraud$reason=="fraud score threshold"),],newflags)
+DNU$DNU=2 #do not upload flag
+discuss=rbind(logstudents,loguchicago,weirdjoke,sona_duplicate,
+              fraud[which(fraud$reason!="fraud score threshold"),],duplicateIP)
+discuss$DNU=1
+bad=rbind(DNU,discuss)
+good=df[-which(df$rowID %in% bad$rowID),]
+good$DNU=0
 
-upload_check=df[-which(df$rowID %in% dont_upload_id),] #remove do not upload from uploads
-upload_check=upload_check[-which(upload_check$rowID %in% unsure$rowID),] #remove participants with discuss items from upload, replace with df of reasons
-upload_check=rbind(upload_check,unsure,okaystudents)
-upload_check=upload_check[order(upload_check$StartDate, upload_check$rowID, upload_check$reason),]
+final=rbind(bad,good)
+final$current=ifelse(final$StartDate>=as_datetime(date_begin) & final$StartDate<=as_datetime(date_end),
+                     1,0) #in current date range -- may have issues with long durations?
 
-upload_check=subset(upload_check,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
-                                           RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
-                                           UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-write.csv(upload_check,paste(as.Date(date_end),"_upload_check.csv",sep=""))
+#removing unneeded columns
+final=subset(final,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
+                             RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
+                             UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
+final$action=ifelse(final$rowID %in% DNU$rowID,
+                    "do not upload",
+                    ifelse(final$rowID %in% discuss$rowID, 
+                           "discuss",
+                           ifelse(final$reason=="N/A" & final$DNU==0, 
+                                  "upload",NA)))
 
+#reordering/formatting
+final=final[order(final$rowID),]
+final=final[,c(40,1:2,35,37,41,3:30,38,31:34,36,39)]
+
+write.csv(final,paste(as.Date(date_end),"Qualtrics.csv",sep=""))

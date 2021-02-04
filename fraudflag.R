@@ -13,7 +13,7 @@ require(dplyr)
 require(stringr)
 require(lubridate)
 
-# loading in data 1/25/2021
+# loading in data 2/4/2021
 
 # First, set your working directory here. This is the folder that you'd want all your output to be downloaded to.
 # You can check what your current directory is by typing getwd() into the Console
@@ -25,8 +25,7 @@ qualtrics=fread("1_4 Virtual Lab - New Participant Intake form_January 4, 2021_1
 
 #upload flagged participants as CSV
 #must remove "headings" for each type of flag in CSV
-flagged_participants=fread("flagged participants (1).csv", header = TRUE) #UPDATE
-flagged_participants=flagged_participants[which(flagged_participants$date!=""),]
+flagged_participants=fread("new flagged participants.csv", header = TRUE) #UPDATE
 
 ##############################################################################################
 # Minor data cleaning
@@ -40,8 +39,8 @@ names(qualtrics)[23] <- "First Name"
 names(qualtrics)[24] <- "Last Name"
 names(qualtrics)[25] <- "email1"
 
-names(flagged_participants)[5] <- "First Name" 
-names(flagged_participants)[6] <- "Last Name"  # updated???????
+names(flagged_participants)[27] <- "First Name" 
+names(flagged_participants)[28] <- "Last Name" 
 
 #getting startdate into date format
 
@@ -72,16 +71,15 @@ qualtrics$EndDate=as_datetime(substr(as.character(qualtrics$EndDate),1,nchar(as.
                               format="%Y-%m-%d %H:%M")
 
 if(sum(sapply(qualtrics$StartDate,is.na))>0){
-  warning("Date format incorrect")
+  warning("Qualtrics date format incorrect")
   print(rownames(qualtrics[which(is.na(qualtrics$StartDate))]))
 }
-
-flagged_participants$date=as.Date(flagged_participants$date, format = "%m/%d/%Y")
 
 #trimming space after emails
 qualtrics$email1=str_trim(qualtrics$email1)
 qualtrics$edu_email2=str_trim(qualtrics$edu_email2)
 sona$Email=str_trim(sona$Email)
+flagged_participants$email=str_trim(flagged_participants$email)
 
 #converting fraud scores from character to numeric
 qualtrics$Q_RecaptchaScore=as.numeric(qualtrics$Q_RecaptchaScore)
@@ -244,15 +242,16 @@ get_new_flags=function(flagged_participants,df){
   flagnames=concat_names(flagged_participants)
   qualnames=concat_names(df) 
   qualIP=df$IPAddress
-  flagIP=flagged_participants$`IP Address`
+  flagIP=flagged_participants$IPAddress
   
   name_id=df$rowID[which(qualnames %in% flagnames)]
   IP_id=df$rowID[which(qualIP%in%flagIP)] #array of qualtrics rowIDs whose IPs show up in flagged
   
   name=df[which(df$rowID%in%name_id),] #df of new flags
   IP=df[which(df$rowID%in%IP_id),]
+  email=df[which(df$email%in%flagged_participants$email),]
   
-  dat=rbind(name,IP)
+  dat=rbind(name,IP,email)
   
   if(nrow(dat)==0){
     return(dat)
@@ -266,8 +265,12 @@ get_new_flags=function(flagged_participants,df){
     name$reason="name in flagged"
     name$flagged=1
   }
+  if(nrow(email)>0){
+    email$reason="email in flagged"
+    email$flagged=1
+  }
   
-  return(rbind(name,IP))
+  return(rbind(name,IP,email))
 }
 
 #updates .edu emails in qualtrics$email_fin provided at second opportunity if no strange options are selected (not sign as student/no .edu email)
@@ -306,7 +309,7 @@ student_email=function(df1){
     filter(not_sign_as_student!="") 
   
   if(nrow(log_this>0)){
-    log_this$reason="not want to sign as student - Other"
+    log_this$reason="not sign as student - Other"
   }
   
   #people who gave edu email, but selected strange choice (not want to sign and/or school doesn't have .edu)
@@ -419,7 +422,7 @@ get_sona_duplicates=function(df){
   #getting rowIDs that correspond to duplicates in SONA
   name_id=copy$rowID[which(copy$fullname %in% sonanames)]
   #check both orig and "updated" email
-  email_id=copy$rowID[which(df$email1 %in% sonaemail | df$email_fin %in% sonaemail)] 
+  email_id=copy$rowID[which(df$email1 %in% sonaemail | df$email_fin %in% sonaemail | df$email %in% sonaemail)] 
   
   name=df[which(df$rowID%in%name_id),]
   
@@ -505,8 +508,8 @@ newflags=get_new_flags(flagged_participants, df)
 #eyeball check
 joke_test=df[which(df$age=="Yes"),c("rowID","joke")] #exclude under 18
 View(joke_test)
-weird_jokeID=c(6669,6677,6690,6704,6709,6711,6730,6731,6732) #UPDATE: if jokes are weird, put its rowID in the "c()"
-# e.g. c(5702,5676,3048)
+weird_jokeID=c() #UPDATE: if jokes are weird, put its rowID in the "c()"
+# e.g. c(5702,5676,3048). Leave it as c() if there are no weird jokes
 
 weirdjoke=get_jokes(df,weird_jokeID)
 
@@ -543,15 +546,26 @@ final$current=ifelse(final$StartDate>=as_datetime(date_begin) & final$StartDate<
 final=subset(final,select=-c(Status,Progress,Finished,RecordedDate,ResponseId,RecipientLastName,
                              RecipientFirstName,RecipientEmail,ExternalReference,DistributionChannel,
                              UserLanguage,refer_18_TEXT,refer_16_TEXT,refer_7_TEXT,refer_10_TEXT,refer_11_TEXT))
-final$action=ifelse(final$rowID %in% DNU$rowID,
-                    "do not upload",
-                    ifelse(final$rowID %in% discuss$rowID, 
-                           "discuss",
-                           ifelse(final$reason=="N/A" & final$DNU==0, 
-                                  "upload",NA)))
+final$action=ifelse(final$current==0, 
+                    "old duplicateIP - do not upload",
+                    ifelse(final$rowID %in% DNU$rowID,
+                           "do not upload",
+                           ifelse(final$rowID %in% discuss$rowID, 
+                                  "discuss",
+                                  ifelse(final$reason=="N/A", 
+                                         "upload",NA))))
 
 #reordering/formatting
 final=final[order(final$rowID),]
 final=final[,c(40,1:2,35,37,41,3:30,38,31:34,36,39)]
 
-write.csv(final,paste(as.Date(date_end),"Qualtrics.csv",sep=""))
+fin = final %>%
+  filter(current==1) %>%
+  group_by(rowID)%>%
+  mutate(full_reasons=paste(reason,collapse=" | "))
+
+fin=fin[,c(1:4,6,42,7:40)]
+
+fin$action[which(fin$full_reasons=="not sign as student - Other" | fin$full_reasons=="not sign as student - UChicago")]<-"upload"
+
+write.csv(fin,paste(as.Date(date_end),"Qualtrics.csv",sep=""))
